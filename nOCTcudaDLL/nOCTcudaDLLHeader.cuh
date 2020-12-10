@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef NOCT_CUDA_DLL_HEADER
+#ifdef OCT_CUDA_EXPORTS
 #define OCT_CUDA_API __declspec(dllexport)
 #else
 #define OCT_CUDA_API __declspec(dllimport)
