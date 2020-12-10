@@ -33,6 +33,6 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 }
 
 extern "C" OCT_CUDA_API int getDeviceCount(int* nNumberDevices); 
-
+extern "C" OCT_CUDA_API int getDeviceName(int nDeviceNumber, char* strDeviceName); 
 
 
