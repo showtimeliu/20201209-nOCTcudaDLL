@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Souce Files">
+      <UniqueIdentifier>{aefb8634-523c-4208-9ef0-f095c5309a49}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{372444ba-3304-4c6a-9eb8-3b624e68f157}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="nOCTcudaDLLHeader.cuh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="nOCTDLL.cu">
+      <Filter>Souce Files</Filter>
+    </CudaCompile>
+  </ItemGroup>
+</Project>
