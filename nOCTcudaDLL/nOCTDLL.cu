@@ -234,7 +234,12 @@ int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular) {
 }
 
 
+int processSDOCT() {
+    return -1; 
+
+}
+
 
 int processPSSDOCT() {
-
+    return -1; 
 }

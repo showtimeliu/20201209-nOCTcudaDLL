@@ -40,5 +40,6 @@ extern "C" OCT_CUDA_API int cleanup();
 extern "C" OCT_CUDA_API int getDataSDOCT(void* pnIMAQ); 
 extern "C" OCT_CUDA_API int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular);
 
+extern "C" OCT_CUDA_API int processSDOCT(); 
 extern "C" OCT_CUDA_API int processPSSDOCT(); 
 
