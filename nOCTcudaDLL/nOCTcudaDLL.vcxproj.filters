@@ -17,5 +17,8 @@
     <CudaCompile Include="nOCTDLL.cu">
       <Filter>Souce Files</Filter>
     </CudaCompile>
+    <CudaCompile Include="nOCTDLLKernelFunctions.cu">
+      <Filter>Souce Files</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

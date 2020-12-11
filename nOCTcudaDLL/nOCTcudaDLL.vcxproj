@@ -79,6 +79,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="nOCTDLL.cu" />
+    <CudaCompile Include="nOCTDLLKernelFunctions.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nOCTcudaDLLHeader.cuh" />

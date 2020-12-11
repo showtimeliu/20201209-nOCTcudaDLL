@@ -34,5 +34,11 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 
 extern "C" OCT_CUDA_API int getDeviceCount(int* nNumberDevices); 
 extern "C" OCT_CUDA_API int getDeviceName(int nDeviceNumber, char* strDeviceName); 
+extern "C" OCT_CUDA_API int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessNumberLines, int nProcessedNumberLines); 
+extern "C" OCT_CUDA_API int cleanup(); 
 
+extern "C" OCT_CUDA_API int getDataSDOCT(void* pnIMAQ); 
+extern "C" OCT_CUDA_API int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular);
+
+extern "C" OCT_CUDA_API int processPSSDOCT(); 
 
