@@ -3,26 +3,42 @@
 
 static int gnMode = -1;
 static int gnRawLineLength;
-static int gnRawNumberLines;
-static int gnCalibrationNumberLines;
-static int gnProcessNumberLines;
+static int gnRawNumberLines;            // number of lines in a frame 
+// static int gnCalibrationNumberLines;
+static int gnProcessNumberLines;        // number of lines in a chunk
 static int gnProcessedNumberLines;
 static int gnPerpendicular;
 static int gnAllocationStatus = 0;
 static int gnMidLength;
 
-static float* gpfRawCalibration;
-static float* gpfProcessCalibration;
-static size_t gnProcessCalibrationPitch;
+/* raw spectra arrays */
+    // common
+// static short* h_gpnRawIMAQ;             // host: raw spectra from camera 
+static short* d_gpnRawIMAQ;             // device: raw spectra from camera
+static float* d_gpfRawIMAQ;             // device: raw spectra (gpfRawCalibration) 
+static float* gpfIMAQPitched;           // device: raw spectra copied to pitched memory (gpfProcessCalibration)
+static size_t gnIMAQPitch;              // gnProcessCalibrationPitch
+    // PS-SD-OCT
+// static short* h_gpnRawIMAQParallel;     // host: raw spectra from camera 
+static short* d_gpnRawIMAQParallel;     // device: raw spectra from camera
+static float* d_gpfRawIMAQParallel;     // device: raw spectra (gpfRawCalibration) 
+// static short* h_gpnRawIMAQPerpendicular;    // host: raw spectra from camera 
+static short* d_gpnRawIMAQPerpendicular;    // device: raw spectra from camera
+static float* d_gpfRawIMAQPerpendicular;    // device: raw spectra (gpfRawCalibration) 
 
-// reference
+
+/* reference */
+    // common 
+static float* gpfReference; 
+    // PS-SD-OCT
 static float* gpfReferenceEven;
 static float* gpfReferenceOdd;
 
-// fft
-static cufftComplex* gpcProcessDepthProfile;
-static size_t gnProcessDepthProfilePitch;
+/* fft */ 
 static cufftHandle gchForward;
+static cufftComplex* gpcProcessDepthProfile; 
+static size_t gnProcessDepthProfilePitch;    
+
 
 // calibration mask
 static int gnCalibrationStart;
@@ -107,51 +123,70 @@ int getDeviceName(int nDeviceNumber, char* strDeviceName) {
 
 int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessNumberLines, int nProcessedNumberLines) {
     
-    cleanup();
+    cleanup(nMode);
 
     // copy parameters to global parameters
     gnMode = nMode;
     gnRawLineLength = nRawLineLength;
-    gnRawNumberLines = nRawNumberLines;
-    gnProcessNumberLines = nProcessNumberLines;
+    gnRawNumberLines = nRawNumberLines;                 // number of lines in a frame
+    gnProcessNumberLines = nProcessNumberLines;         // number of lines in a chunk
     gnProcessedNumberLines = nProcessedNumberLines;
 
-    // allocate memory
+    int nActualProcessNumberLines; 
+
+    // allocate memory  
+
     switch (nMode) {
     case 0: // SD-OCT
         gnPerpendicular = 0;
-        gnCalibrationNumberLines = 1;
+        // gnCalibrationNumberLines = 1;
+        nActualProcessNumberLines = gnProcessNumberLines; 
+
+        // gpuErrchk(cudaMallocHost((void**)&h_gpnRawIMAQ, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpnRawIMAQ, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpfRawIMAQ, (gnRawLineLength * gnRawNumberLines) * sizeof(float)));
+
+        gpuErrchk(cudaMalloc((void**)&gpfReference, gnRawLineLength * sizeof(float))); 
+
         break;
     case 1: // PS SD-OCT
         gnPerpendicular = 1;
-        gnCalibrationNumberLines = gnRawNumberLines;
+        // gnCalibrationNumberLines = gnRawNumberLines; // ???
+        nActualProcessNumberLines = gnProcessNumberLines >> 1;      // only process odd or even lines
+
+        // gpuErrchk(cudaMallocHost((void**)&h_gpnRawIMAQParallel, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpnRawIMAQParallel, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpfRawIMAQParallel, (gnRawLineLength * gnRawNumberLines) * sizeof(float)));
+        // gpuErrchk(cudaMallocHost((void**)&h_gpnRawIMAQPerpendicular, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpnRawIMAQPerpendicular, (gnRawLineLength * gnRawNumberLines) * sizeof(short)));
+        gpuErrchk(cudaMalloc((void**)&d_gpfRawIMAQPerpendicular, (gnRawLineLength * gnRawNumberLines) * sizeof(float)));
+        
+        gpuErrchk(cudaMalloc((void**)&gpfReferenceEven, gnRawLineLength * sizeof(float)));
+        gpuErrchk(cudaMalloc((void**)&gpfReferenceOdd, gnRawLineLength * sizeof(float)));        
+
         break;
     case 2: // line field
         gnPerpendicular = 0;
-        gnCalibrationNumberLines = 1;
+        // gnCalibrationNumberLines = 1;
         break;
     case 3: // OFDI
         gnPerpendicular = 0;
-        gnCalibrationNumberLines = gnRawNumberLines;
+        // gnCalibrationNumberLines = gnRawNumberLines;
         break;
     case 4: // PS OFDI
         gnPerpendicular = 1;
-        gnCalibrationNumberLines = gnRawNumberLines;
+        // gnCalibrationNumberLines = gnRawNumberLines;
         break;
     } // switch (nMode)
 
-    gpuErrchk(cudaMallocHost((void**)&gpfRawCalibration, (gnRawLineLength * gnCalibrationNumberLines) * sizeof(float)));
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessCalibration, &gnProcessCalibrationPitch, gnRawLineLength * sizeof(float), gnProcessNumberLines >> 1));
-
-    gpuErrchk(cudaMalloc((void**)&gpfReferenceEven, gnRawLineLength * sizeof(float)));
-    gpuErrchk(cudaMalloc((void**)&gpfReferenceOdd, gnRawLineLength * sizeof(float)));
-
+    gpuErrchk(cudaMallocPitch((void**)&gpfIMAQPitched, &gnIMAQPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
+     
     gnMidLength = (int)(gnRawLineLength / 2 + 1);
-    gpuErrchk(cudaMallocPitch((void**)&gpcProcessDepthProfile, &gnProcessDepthProfilePitch, gnRawLineLength * sizeof(cufftComplex), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpcProcessDepthProfile, &gnProcessDepthProfilePitch, gnRawLineLength * sizeof(cufftComplex), nActualProcessNumberLines));
     int nRank = 1;
     int pn[] = { gnRawLineLength };
     int nIStride = 1, nOStride = 1;
-    int nIDist = gnProcessCalibrationPitch / sizeof(float);
+    int nIDist = gnIMAQPitch / sizeof(float);
     int nODist = gnProcessDepthProfilePitch / sizeof(cufftComplex);
     int pnINEmbed[] = { 0 };
     int pnONEmbed[] = { 0 };
@@ -160,31 +195,33 @@ int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessN
 
     gpuErrchk(cudaMalloc((void**)&gpfCalibrationMask, gnRawLineLength * sizeof(float)));
 
-    gpuErrchk(cudaMallocPitch((void**)&gpcProcessSpectrum, &gnProcessSpectrumPitch, gnRawLineLength * sizeof(cufftComplex), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpcProcessSpectrum, &gnProcessSpectrumPitch, gnRawLineLength * sizeof(cufftComplex), nActualProcessNumberLines));
     nIDist = gnProcessDepthProfilePitch / sizeof(cufftComplex);
     nODist = gnProcessSpectrumPitch / sizeof(cufftComplex);
     cufftPlanMany(&gchReverse, nRank, pn, pnINEmbed, nIStride, nIDist, pnONEmbed, nOStride, nODist, CUFFT_C2C, nBatch);
 
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessPhase, &gnProcessPhasePitch, gnRawLineLength * sizeof(float), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpfProcessPhase, &gnProcessPhasePitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
 
     cudaMalloc((void**)&gpfLeftPhase, sizeof(float));
     cudaMalloc((void**)&gpfRightPhase, sizeof(float));
     cudaMalloc((void**)&gpfKLineCoefficients, 2 * sizeof(float));
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessK, &gnKPitch, gnRawLineLength * sizeof(float), gnProcessNumberLines >> 1));
-    gpuErrchk(cudaMallocPitch((void**)&gpnProcessIndex, &gnIndexPitch, gnRawLineLength * sizeof(int), gnProcessNumberLines >> 1));
-    gpuErrchk(cudaMallocPitch((void**)&gpnProcessAssigned, &gnAssignedPitch, gnRawLineLength * sizeof(int), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpfProcessK, &gnKPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
+    gpuErrchk(cudaMallocPitch((void**)&gpnProcessIndex, &gnIndexPitch, gnRawLineLength * sizeof(int), nActualProcessNumberLines));
+    gpuErrchk(cudaMallocPitch((void**)&gpnProcessAssigned, &gnAssignedPitch, gnRawLineLength * sizeof(int), nActualProcessNumberLines));
 
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessSpectrumK, &gnSpectrumKPitch, gnRawLineLength * sizeof(float), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpfProcessSpectrumK, &gnSpectrumKPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
 
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessOCT, &gnProcessOCTPitch, gnRawLineLength * sizeof(float), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpfProcessOCT, &gnProcessOCTPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
     gpuErrchk(cudaMallocHost((void**)&gpcProcessedOCT, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
 
     gpuErrchk(cudaMalloc((void**)&gpfDispersionMask, gnRawLineLength * sizeof(float)));
     gpuErrchk(cudaMalloc((void**)&gpcDispersionCorrection, gnRawLineLength * sizeof(cufftComplex)));
-    gpuErrchk(cudaMallocPitch((void**)&gpcProcessKCorrected, &gnKCorrectedPitch, gnRawLineLength * sizeof(cufftComplex), gnProcessNumberLines >> 1));
+    gpuErrchk(cudaMallocPitch((void**)&gpcProcessKCorrected, &gnKCorrectedPitch, gnRawLineLength * sizeof(cufftComplex), nActualProcessNumberLines));
 
     nIDist = gnKCorrectedPitch / sizeof(cufftComplex);
     cufftPlanMany(&gchForwardComplex, nRank, pn, pnINEmbed, nIStride, nIDist, pnONEmbed, nOStride, nODist, CUFFT_C2C, nBatch);
+
+    gpuErrchk(cudaDeviceSynchronize());
 
     gnAllocationStatus = 1;
 
@@ -192,14 +229,47 @@ int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessN
 
 } // int initialize
 
-int cleanup() {
+int cleanup(int nMode) {
 
     // free memory allocations
     if (gnAllocationStatus == 1) {
-        gpuErrchk(cudaFreeHost(gpfRawCalibration));
-        gpuErrchk(cudaFree(gpfProcessCalibration));
-        gpuErrchk(cudaFree(gpfReferenceEven));
-        gpuErrchk(cudaFree(gpfReferenceOdd));
+        
+        
+        switch (nMode)
+        {
+        case 0: // SD-OCT
+            gpuErrchk(cudaFreeHost(h_gpnRawIMAQ));
+            gpuErrchk(cudaFree(d_gpnRawIMAQ));
+            gpuErrchk(cudaFree(d_gpfRawIMAQ));
+
+            gpuErrchk(cudaFree(gpfReference)); 
+            
+            break;
+        case 1: // PS SD-OCT 
+            gpuErrchk(cudaFreeHost(h_gpnRawIMAQParallel));
+            gpuErrchk(cudaFree(d_gpnRawIMAQParallel));
+            gpuErrchk(cudaFree(d_gpfRawIMAQParallel));
+            gpuErrchk(cudaFreeHost(h_gpnRawIMAQPerpendicular));
+            gpuErrchk(cudaFree(d_gpnRawIMAQPerpendicular));
+            gpuErrchk(cudaFree(d_gpfRawIMAQPerpendicular));
+
+            gpuErrchk(cudaFree(gpfReferenceEven));
+            gpuErrchk(cudaFree(gpfReferenceOdd));
+
+            break;
+        case 2: // line field
+            
+            break;
+        case 3: // OFDI
+            
+            break;
+        case 4: // PS OFDI
+            
+            break;
+            break;
+        }
+        
+        gpuErrchk(cudaFree(gpfIMAQPitched));   
         gpuErrchk(cudaFree(gpcProcessDepthProfile));
         cufftDestroy(gchForward);
         gpuErrchk(cudaFree(gpfCalibrationMask));
@@ -227,9 +297,19 @@ int cleanup() {
 }
 
 int getDataSDOCT(void* pnIMAQ) {
-    return -1; }
+
+    
+
+
+    return -1; 
+}
 
 int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular) {
+    cudaMemcpy(d_gpnRawIMAQParallel, pnIMAQParallel, (gnRawLineLength * gnRawNumberLines) * sizeof(short), cudaMemcpyHostToDevice); 
+    cudaMemcpy(d_gpnRawIMAQPerpendicular, pnIMAQPerpendicular, (gnRawLineLength * gnRawNumberLines) * sizeof(short), cudaMemcpyHostToDevice);
+
+    gpuErrchk(cudaDeviceSynchronize());
+
     return -1; 
 }
 
@@ -241,5 +321,27 @@ int processSDOCT() {
 
 
 int processPSSDOCT() {
+
+    int nThreadsPerBlock; 
+    dim3 d3Threads; 
+    dim3 d3Blocks; 
+
+    // convert to float type 
+    d3Threads.x = 512;  d3Threads.y = 1;    d3Threads.z = 1; 
+    d3Blocks.x = gnRawLineLength * gnRawNumberLines / d3Threads.x; 
+    d3Blocks.y = 1;     d3Blocks.z = 1;
+    convert2Float << <d3Blocks, d3Threads >> > (d_gpnRawIMAQParallel, d_gpfRawIMAQParallel, gnRawLineLength * gnRawNumberLines); 
+    gpuErrchk(cudaPeekAtLastError());
+    convert2Float << <d3Blocks, d3Threads >> > (d_gpnRawIMAQPerpendicular, d_gpfRawIMAQPerpendicular, gnRawLineLength * gnRawNumberLines);
+    gpuErrchk(cudaPeekAtLastError()); 
+
+    // loop through cameras
+    for (int nCam = 0; nCam < 2; nCam++) {
+
+    }
+
+
+
+
     return -1; 
 }
