@@ -37,6 +37,7 @@ extern "C" OCT_CUDA_API int getDeviceName(int nDeviceNumber, char* strDeviceName
 extern "C" OCT_CUDA_API int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessNumberLines, int nProcessedNumberLines); 
 extern "C" OCT_CUDA_API int cleanup(int nMode); 
 
+extern "C" OCT_CUDA_API int getReferenceData(int nMode, short* pnReferenceParallel, short* pnReferencePerpendicular, bool bIsReferenceRecorded);
 extern "C" OCT_CUDA_API int getDataSDOCT(void* pnIMAQ); 
 extern "C" OCT_CUDA_API int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular);
 
@@ -44,5 +45,14 @@ extern "C" OCT_CUDA_API int processSDOCT();
 extern "C" OCT_CUDA_API int processPSSDOCT(); 
 
 // kernel functions
-__global__ void convert2Float(short* pnIMAQ, float* pfIMAQ);
-
+__global__ void convert2Float(short* pnIMAQ, float* pfIMAQ, int nSize);
+__global__ void calculateMean(float* pfMatrix, float* pfMean, int nNumberLines, int nLineLength); 
+__global__ void subtractMean(float* pfMatrix, float* pfMean, int nNumberLines, int nLineLength); 
+__global__ void calculateMask(float* pfMask, int nLength, int nStart, int nStop, int nRound);   // consider moving to host
+__global__ void applyMask(cufftComplex* pcMatrix, float* pfMask, int nNumberLines, int nLineLength); 
+__global__ void calculatePhase(cufftComplex* pcMatrix, float* pfPhase, int nNumberLines, int nLineLength); 
+__global__ void unwrapPhase(float* pfPhase, int nNumberLines, int nLineLength, float fPiEps, float f2Pi); 
+__global__ void matchPhase(float* pfPhase, int nNumberLines, int nLineLength, float f2Pi);
+__global__ void getPhaseLimits(float* pfPhase, int nNumberLines, int nLineLength, int nLeft, int nRight, float* pfLeft, float* pfRight);
+__global__ void calculateK(float* pfPhase, float* pfK, int* pnIndex, int* pnAssigned, int nNumberLines, int nLineLength, float* pfLineParameters, int nLeft, int nRight, float* pfLeft, float* pfRight, int nMode); 
+__global__ void cleanIndex(float* pfK, int* pnIndex, int* pnAssigned, int nNumberLines, int nLineLength); 
