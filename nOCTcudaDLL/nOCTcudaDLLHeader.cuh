@@ -34,6 +34,8 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 
 extern "C" OCT_CUDA_API int getDeviceCount(int* nNumberDevices); 
 extern "C" OCT_CUDA_API int getDeviceName(int nDeviceNumber, char* strDeviceName); 
+
+extern "C" OCT_CUDA_API int checkStatus(); 
 extern "C" OCT_CUDA_API int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessNumberLines, int nProcessedNumberLines); 
 extern "C" OCT_CUDA_API int cleanup(int nMode); 
 
@@ -43,6 +45,10 @@ extern "C" OCT_CUDA_API int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPer
 
 extern "C" OCT_CUDA_API int processSDOCT(); 
 extern "C" OCT_CUDA_API int processPSSDOCT(); 
+
+extern "C" OCT_CUDA_API int outputCalibrationPSSDOCT(); 
+
+int calculateSpectralDomainCalibration(int nMode); // may be eventually included in other functions
 
 // kernel functions
 __global__ void convert2Float(short* pnIMAQ, float* pfIMAQ, int nSize);
