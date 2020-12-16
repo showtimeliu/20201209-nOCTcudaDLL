@@ -349,4 +349,13 @@ __global__ void applyDispersionCorrection(float* pfMatrix, cufftComplex* pcCorre
     }   // for (int nLine
 }   // void subtractMean
 
+__global__ void combineCamera() {
+
+}
+
+__global__ void convert2dBScale() {
+
+}
+
+
 

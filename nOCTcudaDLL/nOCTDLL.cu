@@ -87,10 +87,6 @@ static size_t gnKPitchPerpendicular;
 static size_t gnIndexPitchParallel; 
 static size_t gnIndexPitchPerpendicular; 
 
-static float* gpfProcessOCT;
-static size_t gnProcessOCTPitch;
-static cufftComplex* gpcProcessedOCT;
-
 // dispersion mask
 static int gnDispersionStart;
 static int gnDispersionStop;
@@ -102,6 +98,16 @@ static cufftComplex* gpcDispersionCorrection;
 static cufftHandle gchForwardComplex;
 static cufftComplex* gpcProcessKCorrected;
 static size_t gnKCorrectedPitch;
+
+// static float* gpfProcessOCT;
+static size_t gnProcessOCTPitch;
+static cufftComplex* gpcProcessedOCT;
+    // PS-SD-OCT
+static cufftComplex* gpcProcessedOCTParallelOdd; 
+static cufftComplex* gpcProcessedOCTParallelEven;
+static cufftComplex* gpcProcessedOCTPerpendicularOdd;
+static cufftComplex* gpcProcessedOCTPerpendicularEven;
+
 
 
 int getDeviceCount(int* nNumberDevices) {
@@ -186,6 +192,12 @@ int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessN
         gpuErrchk(cudaMallocPitch((void**)&gpnProcessIndexParallel, &gnIndexPitchParallel, gnRawLineLength * sizeof(int), nActualProcessNumberLines));
         gpuErrchk(cudaMallocPitch((void**)&gpnProcessIndexPerpendicular, &gnIndexPitchPerpendicular, gnRawLineLength * sizeof(int), nActualProcessNumberLines));
 
+        gpuErrchk(cudaMalloc((void**)&gpcProcessedOCTParallelOdd, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
+        gpuErrchk(cudaMalloc((void**)&gpcProcessedOCTParallelEven, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
+        gpuErrchk(cudaMalloc((void**)&gpcProcessedOCTPerpendicularOdd, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
+        gpuErrchk(cudaMalloc((void**)&gpcProcessedOCTPerpendicularEven, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
+
+
         break;
     case 2: // line field
         gnPerpendicular = 0;
@@ -233,7 +245,7 @@ int initialize(int nMode, int nRawLineLength, int nRawNumberLines, int nProcessN
 
     gpuErrchk(cudaMallocPitch((void**)&gpfProcessSpectrumK, &gnSpectrumKPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
 
-    gpuErrchk(cudaMallocPitch((void**)&gpfProcessOCT, &gnProcessOCTPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
+    // gpuErrchk(cudaMallocPitch((void**)&gpfProcessOCT, &gnProcessOCTPitch, gnRawLineLength * sizeof(float), nActualProcessNumberLines));
     gpuErrchk(cudaMallocHost((void**)&gpcProcessedOCT, (gnMidLength * gnProcessedNumberLines) * sizeof(cufftComplex)));
 
     gpuErrchk(cudaMalloc((void**)&gpfDispersionMask, gnRawLineLength * sizeof(float)));
@@ -307,7 +319,7 @@ int cleanup(int nMode) {
         cudaFree(gpnProcessIndex);
         cudaFree(gpnProcessAssigned);
         cudaFree(gpfProcessSpectrumK);
-        cudaFree(gpfProcessOCT);
+        // cudaFree(gpfProcessOCT);
         cudaFreeHost(gpcProcessedOCT);
         gpuErrchk(cudaFree(gpfDispersionMask));
         gpuErrchk(cudaFree(gpcDispersionCorrection));
@@ -383,6 +395,11 @@ int getReferenceData(int nMode, short* pnReferenceParallel, short* pnReferencePe
     return -1; 
 }
 
+int getCalibrationData() {
+
+    return -1; 
+}
+
 int getDataSDOCT(void* pnIMAQ) {
 
     
@@ -415,7 +432,7 @@ int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular) {
     return -1; 
 }
 
-int calculateSpectralDomainCalibration(int nMode) { // can be used in both SD-OCT and PS SD-OCT, cannot be used in wrapper 
+int calculateSpectralDomainCalibration(int nMode) { // can be used in both SD-OCT and PS SD-OCT, not in DLL
     int nThreadsPerBlock;
     dim3 d3Threads;
     dim3 d3Blocks;
@@ -491,7 +508,8 @@ int calculateSpectralDomainCalibration(int nMode) { // can be used in both SD-OC
     d3Blocks.y = 1;
     d3Blocks.z = 1;
     cudaMemset2D(gpnProcessAssigned, gnAssignedPitch, 0, gnRawLineLength * sizeof(int), nActualProcessNumberLines);
-    calculateK << <d3Blocks, d3Threads >> > (gpfProcessPhase, gpfProcessK, gpnProcessAssigned, gpnProcessIndex, nActualProcessNumberLines, gnRawLineLength, gpfKLineCoefficients, 32, gnRawLineLength - 32, gpfLeftPhase, gpfRightPhase, gnKMode);
+    calculateK << <d3Blocks, d3Threads >> > (gpfProcessPhase, gpfProcessK, gpnProcessAssigned, gpnProcessIndex, nActualProcessNumberLines, gnRawLineLength, \
+        gpfKLineCoefficients, 32, gnRawLineLength - 32, gpfLeftPhase, gpfRightPhase, gnKMode);
 
     d3Threads.x = 128;
     d3Threads.y = 1024 / d3Threads.x;
@@ -693,27 +711,48 @@ int processPSSDOCT() {
                     subtractMean << <d3Blocks, d3Threads >> > (gpfIMAQPitched, gpfReferencePerpendicular, nNumberLinesPerChunk >> 1, gnRawLineLength);
                     break;
                 }
+                // now gpfIMAQPitched is the result of reference subtraction  (fringes), SAME AS gpfProcessOCT
+
                 gpuErrchk(cudaPeekAtLastError()); 
+                gpuErrchk(cudaDeviceSynchronize()); 
 
-                /* forward fft */
-                gpuErrchk(cudaMemset2D(gpcProcessDepthProfile, gnProcessDepthProfilePitch, 0.0, gnProcessDepthProfilePitch, nNumberLinesPerChunk >> 1));
-                cufftExecR2C(gchForward, gpfIMAQPitched, gpcProcessDepthProfile);
+                /* calibration */
+                if (gbIsCalibrationLoaded == false) {
+                    calculateSpectralDomainCalibration(1);  // nMode = 1: PS SD-OCT
+                        // gpfProcessK, gpnProcessIndex, gpnProcessAssigned
+                } 
 
-                /* mask */
-                // calculate mask: QUESTION can be done in CPU in the initialize function? (small data size, avoid warp divergence) 
-                nThreadsPerBlock = 512;
-                calculateMask << <gnRawLineLength / nThreadsPerBlock, nThreadsPerBlock >> > (gpfCalibrationMask, gnRawLineLength, 50, 100, 16);     // grab these numbers from C# UI
-
-                // apply mask
+                /* interpolation */
                 d3Threads.x = 32;
                 d3Threads.y = 1024 / d3Threads.x;
                 d3Threads.z = 1;
-                d3Blocks.x = gnProcessNumberLines / d3Threads.x;
+                d3Blocks.x = gnRawLineLength / d3Threads.x;
+                d3Blocks.y = (nNumberLinesPerChunk >> 1) / d3Threads.y;
+                d3Blocks.z = 1;
+                interpCubicSpline << <d3Blocks, d3Threads >> > (gpfProcessK, gpnProcessIndex, gpfIMAQPitched, gpfProcessSpectrumK, nNumberLinesPerChunk >> 1, gnRawLineLength);
+                gpuErrchk(cudaDeviceSynchronize());
+
+                /* forward fft */
+                gpuErrchk(cudaMemset2D(gpcProcessDepthProfile, gnProcessDepthProfilePitch, 0.0, gnProcessDepthProfilePitch, nNumberLinesPerChunk >> 1));
+                gpuErrchk(cudaDeviceSynchronize());
+
+                cufftExecR2C(gchForward, gpfProcessSpectrumK, gpcProcessDepthProfile);
+
+                /* mask */
+                    // calculate mask
+                nThreadsPerBlock = 512;
+                calculateMask << <gnRawLineLength / nThreadsPerBlock, nThreadsPerBlock >> > (gpfDispersionMask, gnRawLineLength, 50, 100, 16); // need to get values from C# UI
+
+                    // apply mask
+                d3Threads.x = 32;
+                d3Threads.y = 1024 / d3Threads.x;
+                d3Threads.z = 1;
+                d3Blocks.x = nNumberLinesPerChunk / d3Threads.x;
                 d3Blocks.y = 1;
                 d3Blocks.z = 1;
-                applyMask << <d3Blocks, d3Threads >> > (gpcProcessDepthProfile, gpfCalibrationMask, nNumberLinesPerChunk >> 1, gnRawLineLength);
+                applyMask << <d3Blocks, d3Threads >> > (gpcProcessDepthProfile, gpfDispersionMask, nNumberLinesPerChunk >> 1, gnRawLineLength);
                 gpuErrchk(cudaPeekAtLastError());
-
+                
                 /* reverse fft */
                 cufftExecC2C(gchReverse, gpcProcessDepthProfile, gpcProcessSpectrum, CUFFT_INVERSE);
 
@@ -722,50 +761,53 @@ int processPSSDOCT() {
                 d3Threads.y = 1024 / d3Threads.x;
                 d3Threads.z = 1;
                 d3Blocks.x = gnRawLineLength / d3Threads.x;
-                d3Blocks.y = (gnProcessNumberLines >> 1) / d3Threads.y;
+                d3Blocks.y = (nNumberLinesPerChunk >> 1) / d3Threads.y;
                 d3Blocks.z = 1;
                 calculatePhase << <d3Blocks, d3Threads >> > (gpcProcessSpectrum, gpfProcessPhase, nNumberLinesPerChunk >> 1, gnRawLineLength);
                 gpuErrchk(cudaPeekAtLastError());
+                
+                /* dispersion correction */
+                    // calculate dispersion correction
+                nThreadsPerBlock = 512;
+                calculateDispersionCorrection << <gnRawLineLength / nThreadsPerBlock, nThreadsPerBlock >> > (gpfProcessPhase, gpcDispersionCorrection);
 
-                d3Threads.x = 256;
+                    // apply correction
+                d3Threads.x = 32;
                 d3Threads.y = 1024 / d3Threads.x;
                 d3Threads.z = 1;
-                d3Blocks.x = (nNumberLinesPerChunk >> 1) / d3Threads.y;
+                d3Blocks.x = nNumberLinesPerChunk / d3Threads.x;
                 d3Blocks.y = 1;
                 d3Blocks.z = 1;
-                unwrapPhase << <d3Blocks, d3Threads >> > (gpfProcessPhase, nNumberLinesPerChunk >> 1, gnRawLineLength, gfPiEps, gf2Pi);
+                applyDispersionCorrection << <d3Blocks, d3Threads >> > (gpfProcessSpectrumK, gpcDispersionCorrection, gpcProcessKCorrected, nNumberLinesPerChunk >> 1, gnRawLineLength);
+                gpuErrchk(cudaPeekAtLastError());
+                
+                /* forward fft */
+                cufftExecC2C(gchForwardComplex, gpcProcessKCorrected, gpcProcessDepthProfile, CUFFT_FORWARD);
+                gpuErrchk(cudaDeviceSynchronize());
 
-                d3Threads.x = 256;
-                d3Threads.y = 1024 / d3Threads.x;
-                d3Threads.z = 1;
-                d3Blocks.x = (nNumberLinesPerChunk >> 1) / d3Threads.y;
-                d3Blocks.y = 1;
-                d3Blocks.z = 1;
-                matchPhase << <d3Blocks, d3Threads >> > (gpfProcessPhase, nNumberLinesPerChunk >> 1, gnRawLineLength, gf2Pi);
+                // copy to results array
+                switch (nCam) {
+                case 0: // parallel camera
+                    switch (nOddEven) {
+                    case 0: // even lines
 
-                nThreadsPerBlock = 32;
-                getPhaseLimits << <2, nThreadsPerBlock >> > (gpfProcessPhase, nNumberLinesPerChunk >> 1, gnRawLineLength, 32, gnRawLineLength - 32, gpfLeftPhase, gpfRightPhase);
+                        break; 
+                    case 1: // odd lines
 
-                gnKMode = 1;
-                d3Threads.x = 128;
-                d3Threads.y = 1024 / d3Threads.x;
-                d3Threads.z = 1;
-                d3Blocks.x = (nNumberLinesPerChunk >> 1) / d3Threads.y;
-                d3Blocks.y = 1;
-                d3Blocks.z = 1;
-                cudaMemset2D(gpnProcessAssigned, gnAssignedPitch, 0, gnRawLineLength * sizeof(int), nNumberLinesPerChunk >> 1);
-                calculateK << <d3Blocks, d3Threads >> > (gpfProcessPhase, gpfProcessK, gpnProcessAssigned, gpnProcessIndex, nNumberLinesPerChunk >> 1, gnRawLineLength, gpfKLineCoefficients, 32, gnRawLineLength - 32, gpfLeftPhase, gpfRightPhase, gnKMode);
+                        break; 
+                    }
+                    break; 
+                case 1: // perpendicular camera
+                    switch (nOddEven) {
+                    case 0: // even lines
 
-                d3Threads.x = 128;
-                d3Threads.y = 1024 / d3Threads.x;
-                d3Threads.z = 1;
-                d3Blocks.x = (nNumberLinesPerChunk >> 1) / d3Threads.y;
-                d3Blocks.y = 1;
-                d3Blocks.z = 1;
-                cleanIndex << <d3Blocks, d3Threads >> > (gpfProcessK, gpnProcessIndex, gpnProcessAssigned, nNumberLinesPerChunk >> 1, gnRawLineLength);
+                        break;
+                    case 1: // odd lines
 
-
-
+                        break;
+                    }
+                    break; 
+                }
 
 
             } // for (int nOddEven = 0; nOddEven < 2; nOddEven++)
