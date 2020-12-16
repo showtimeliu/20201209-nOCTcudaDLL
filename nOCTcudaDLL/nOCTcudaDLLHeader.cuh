@@ -46,7 +46,7 @@ extern "C" OCT_CUDA_API int getDataPSSDOCT(void* pnIMAQParallel, void* pnIMAQPer
 extern "C" OCT_CUDA_API int processSDOCT(); 
 extern "C" OCT_CUDA_API int processPSSDOCT(); 
 
-extern "C" OCT_CUDA_API int outputCalibrationPSSDOCT(); 
+extern "C" OCT_CUDA_API int outputCalibrationPSSDOCT(void* pnIMAQParallel, void* pnIMAQPerpendicular, float* pfKParallel, float* pfKPerpendicular, int* pnIndexParallel, int* pnIndexPerpendicular); 
 
 int calculateSpectralDomainCalibration(int nMode); // may be eventually included in other functions
 
