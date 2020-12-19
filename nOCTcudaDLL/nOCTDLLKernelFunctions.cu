@@ -353,9 +353,10 @@ __global__ void combineCamera() {
 
 }
 
-__global__ void convert2dBScale() {
-
+__global__ void separateFFTRealImag(cufftComplex* pcMatrix, float* pfReal, float* pfImaginary, int nWidth, int nHeight) {
+    int id = (blockIdx.y * blockDim.y + threadIdx.y) * (blockDim.x * gridDim.x) + (blockIdx.x * blockDim.x + threadIdx.x);
+    if (id < (nWidth * nHeight)) {
+        pfReal[id] = pcMatrix[id].x;
+        pfImaginary[id] = pcMatrix[id].y;
+    }
 }
-
-
-

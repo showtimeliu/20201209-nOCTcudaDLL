@@ -73,4 +73,4 @@ __global__ void interpCubicSpline(float* pfK, int* pnIndex, float* pfSpectrum, f
 __global__ void calculateDispersionCorrection(float* pfPhase, cufftComplex* pcCorrection);
 __global__ void applyDispersionCorrection(float* pfMatrix, cufftComplex* pcCorrection, cufftComplex* pcMatrix, int nNumberLines, int nLineLength);
 __global__ void combineCamera(); // UNFINISHED
-__global__ void convert2dBScale(); // UNFINISHED
+__global__ void separateFFTRealImag(cufftComplex* pcMatrix, float* pfReal, float* pfImaginary, int nWidth, int nHeight); 
